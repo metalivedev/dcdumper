@@ -3,10 +3,10 @@ from __future__ import unicode_literals
 
 import sys
 import dotcloud
-from dotcloud.ui import CLI
 
+from parser import get_parser
 from dotcloud.ui.debug import global_endpoint_info
-from dotcloud.ui.parser import get_parser
+
 from dotcloud.ui.version import VERSION
 from dotcloud.ui.config import GlobalConfig, CLIENT_KEY, CLIENT_SECRET
 from dotcloud.ui.colors import Colors
@@ -348,6 +348,41 @@ class DCdumper(object):
         except Exception:
             self.die('Authentication failed. Run `{cmd} setup` to redo the authentication'.format(cmd=self.cmd))
         self.get_keys()
+
+    def cmd_dump(self, args):
+        # Get the application information
+        url = '/applications/{0}'.format(args.application)
+        application = self.user.get(url).item
+
+        # Get the services in the application
+        services = application.get('services', [])
+        if not services:
+            self.warning('No services found for application {0}.'.format(args.application))
+            return
+
+        servicelist = [servicename.get('name') for servicename in services]
+        servicelist.sort()
+
+        pattern = re.compile("ssh://([^@]+)@([^:]+):(\d+)")
+
+        for servicename in servicelist:
+            url = '/applications/{0}/services/{1}'.format(args.application, servicename)
+            service = self.user.get(url).item
+
+            # Get the instances in each service
+            for instance in sorted(service.get('instances',[]), key=lambda i: i.get('instance_id')):
+                # find the ssh port. Assume there is only one.
+                for port in instance.get('ports'):
+                    if port.get('name') == 'ssh':
+                        UHP = pattern.findall(port.get("url"))[0]
+                        print """Host {myapp}.{myservice}.{myid}
+  HostName {HOST}
+  Port {PORT}
+  User {USER}
+  IdentityFile ~/.dotcloud_cli/dotcloud.key
+""".format(myapp=args.application, myservice=servicename, myid=instance.get('instance_id'),
+           HOST=UHP[1], PORT=UHP[2], USER=UHP[0])
+
 
     def cmd_setup(self, args):
         if args.api_key:
