@@ -23,9 +23,10 @@ setup(
     url = 'http://www.dotcloud.com/',
     version = VERSION,
     packages = [
+        'dcdumper'
     ],
     scripts  = [
-        'dcdumper'
+        'dcdumper/dcdumper'
     ],
     install_requires = ['dotcloud==0.9.4'],
     zip_safe = False,

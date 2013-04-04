@@ -4,7 +4,7 @@ from __future__ import unicode_literals
 import sys
 import dotcloud
 
-from parser import get_parser
+from dcdumper.parser import get_parser
 from dotcloud.ui.debug import global_endpoint_info
 
 from dotcloud.ui.version import VERSION
