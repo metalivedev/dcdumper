@@ -110,9 +110,11 @@ def get_parser(name='dotcloud'):
     subcmd.add_parser('disconnect', 
             help='Disconnect the current directory from its application')
 
-    # dotcloud dump
-    subcmd.add_parser('dump', parents=[common_parser],
-                      help='Dump the code and ~/data for an application')
+    # dotcloud sshconf
+    dump = subcmd.add_parser('sshconf', parents=[common_parser],
+                             help='create an ssh configuration file to access your services.')
+    dump.add_argument('--all', action='store_true', help='Apply to all applications in this account.')
+    dump.add_argument('--file', help='Filename to write out to. Default is stdout.')
 
     # dotcloud create
     create = subcmd.add_parser('create', help='Create a new application',

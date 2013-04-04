@@ -37,6 +37,15 @@ import locale
 # Set locale
 locale.setlocale(locale.LC_ALL, '')
 
+# Format for an entry in an ssh configuration file
+# A config file can make accessing your services via ssh and rsync easy
+SSHCONFIGFMT="""Host {myapp}.{myservice}.{myid}
+  HostName {HOST}
+  Port {PORT}
+  User {USER}
+  IdentityFile {KEY}
+"""
+
 class DCdumper(object):
     __version__ = VERSION
     def __init__(self, debug=False, colors=None, endpoint=None, username=None):
@@ -349,40 +358,68 @@ class DCdumper(object):
             self.die('Authentication failed. Run `{cmd} setup` to redo the authentication'.format(cmd=self.cmd))
         self.get_keys()
 
-    def cmd_dump(self, args):
-        # Get the application information
-        url = '/applications/{0}'.format(args.application)
-        application = self.user.get(url).item
+    def cmd_sshconf(self, args):
+        outfile = sys.stdout
+        confentries = 0
 
-        # Get the services in the application
-        services = application.get('services', [])
-        if not services:
-            self.warning('No services found for application {0}.'.format(args.application))
-            return
+        try:
+            if not args.application and not args.all:
+                self.die('You must specify an application name or --all')
+            
+            if args.file:
+                if os.path.isfile(args.file):
+                    self.die('File {0} exists! Please choose another name.'.format(args.file)) 
+                outfile = open(args.file, 'w')
 
-        servicelist = [servicename.get('name') for servicename in services]
-        servicelist.sort()
+            if args.all:
+                applist = self.user.get('/applications')
+                if not applist.items:
+                    self.die('Unable to retrieve the list of applications.')
+                appnamelist = [app.get('name') for app in applist.items]
+            else:    
+                appnamelist = [ args.application ]
 
-        pattern = re.compile("ssh://([^@]+)@([^:]+):(\d+)")
+            appnamelist.sort()
 
-        for servicename in servicelist:
-            url = '/applications/{0}/services/{1}'.format(args.application, servicename)
-            service = self.user.get(url).item
+            for appname in appnamelist:
+                # Get the application information
+                url = '/applications/{0}'.format(appname)
+                application = self.user.get(url).item
 
-            # Get the instances in each service
-            for instance in sorted(service.get('instances',[]), key=lambda i: i.get('instance_id')):
-                # find the ssh port. Assume there is only one.
-                for port in instance.get('ports'):
-                    if port.get('name') == 'ssh':
-                        UHP = pattern.findall(port.get("url"))[0]
-                        print """Host {myapp}.{myservice}.{myid}
-  HostName {HOST}
-  Port {PORT}
-  User {USER}
-  IdentityFile ~/.dotcloud_cli/dotcloud.key
-""".format(myapp=args.application, myservice=servicename, myid=instance.get('instance_id'),
-           HOST=UHP[1], PORT=UHP[2], USER=UHP[0])
+                # Get the services in the application
+                services = application.get('services', [])
+                if not services:
+                    self.warning('No services found for application {0}.'.format(appname))
+                    return
 
+                servicelist = [servicename.get('name') for servicename in services]
+                servicelist.sort()
+
+                # This is what an ssh URL looks like, need to break it into USER, HOST, and PORT
+                pattern = re.compile("ssh://([^@]+)@([^:]+):(\d+)")
+
+                for servicename in servicelist:
+                    url = '/applications/{0}/services/{1}'.format(appname, servicename)
+                    service = self.user.get(url).item
+
+                    # Get the instances in each service
+                    for instance in sorted(service.get('instances',[]), key=lambda i: i.get('instance_id')):
+                        # find the ssh port. Assume there is only one per service.
+                        for port in instance.get('ports'):
+                            if port.get('name') == 'ssh':
+                                UHP = pattern.findall(port.get("url"))[0]
+                                confentries+=1
+                                outfile.write(SSHCONFIGFMT.format(myapp=appname, myservice=servicename, 
+                                                                  myid=instance.get('instance_id'),
+                                                                  HOST=UHP[1], PORT=UHP[2], USER=UHP[0],
+                                                                  KEY=self.global_config.key))
+            if sys.stdout != outfile:
+                outfile.close()
+                self.success('Wrote {0} entries to {1}. You can now sync your data with:'.format(confentries, args.file))
+                self.success('\"rsync -azv -e \'ssh -F {0}\' myapp.myservice.0:code/ code\"'.format(args.file))
+
+        except Exception as e:
+            raise
 
     def cmd_setup(self, args):
         if args.api_key:
